@@ -1,0 +1,427 @@
+<div class="apidocDiv">
+<style>
+/*csslint
+*/
+.apidocDiv {
+    background: #fff;
+    font-family: Arial, Helvetica, sans-serif;
+}
+.apidocDiv a[href] {
+    color: #33f;
+    font-weight: bold;
+    text-decoration: none;
+}
+.apidocDiv a[href]:hover {
+    text-decoration: underline;
+}
+.apidocCodeCommentSpan {
+    background: #bbf;
+    color: #000;
+    display: block;
+}
+.apidocCodeKeywordSpan {
+    color: #d00;
+    font-weight: bold;
+}
+.apidocCodePre {
+    background: #eef;
+    border: 1px solid;
+    color: #777;
+    padding: 5px;
+    white-space: pre-wrap;
+}
+.apidocFooterDiv {
+    margin-top: 20px;
+    text-align: center;
+}
+.apidocModuleLi {
+    margin-top: 10px;
+}
+.apidocSectionDiv {
+    border-top: 1px solid;
+    margin-top: 20px;
+}
+.apidocSignatureSpan {
+    color: #777;
+    font-weight: bold;
+}
+</style>
+<h1>api documentation for
+    <a
+
+        href="https://github.com/cloudflare/netjet#readme"
+
+    >netjet (v1.1.3)</a>
+</h1>
+<h4>Express middleware to generate preload headers</h4>
+<div class="apidocSectionDiv"><a
+    href="#apidoc.tableOfContents"
+    id="apidoc.tableOfContents"
+><h1>table of contents</h1></a><ol>
+
+    <li class="apidocModuleLi"><a href="#apidoc.module.netjet">module netjet</a><ol>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.netjet.netjet">
+            function <span class="apidocSignatureSpan"></span>netjet
+            <span class="apidocSignatureSpan">(options)</span>
+            </a>
+
+        </li>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.netjet.posthtml_preload">
+            function <span class="apidocSignatureSpan">netjet.</span>posthtml_preload
+            <span class="apidocSignatureSpan">(options, foundEntries)</span>
+            </a>
+
+        </li>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.netjet.toString">
+            function <span class="apidocSignatureSpan">netjet.</span>toString
+            <span class="apidocSignatureSpan">()</span>
+            </a>
+
+        </li>
+
+    </ol></li>
+
+    <li class="apidocModuleLi"><a href="#apidoc.module.netjet.posthtml_preload">module netjet.posthtml_preload</a><ol>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.netjet.posthtml_preload.posthtml_preload">
+            function <span class="apidocSignatureSpan">netjet.</span>posthtml_preload
+            <span class="apidocSignatureSpan">(options, foundEntries)</span>
+            </a>
+
+        </li>
+
+    </ol></li>
+
+    <li class="apidocModuleLi"><a href="#apidoc.module.netjet.toString">module netjet.toString</a><ol>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.netjet.toString.toString">
+            function <span class="apidocSignatureSpan">netjet.</span>toString
+            <span class="apidocSignatureSpan">()</span>
+            </a>
+
+        </li>
+
+    </ol></li>
+
+</ol></div>
+
+<div class="apidocSectionDiv">
+<h1><a href="#apidoc.module.netjet" id="apidoc.module.netjet">module netjet</a></h1>
+
+
+    <h2>
+        <a href="#apidoc.element.netjet.netjet" id="apidoc.element.netjet.netjet">
+        function <span class="apidocSignatureSpan"></span>netjet
+        <span class="apidocSignatureSpan">(options)</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">function netjet(options) {
+  options = defaults(options, {
+    images: true,
+    scripts: true,
+    styles: true,
+    cache: {}
+  });
+
+  var cache = new LRU(options.cache);
+
+  return function netjetMiddleware(req, res, next) {
+    function appendHeader(field, value) {
+      var prev = res.getHeader(field);
+
+      if (prev) {
+        value = [].concat(prev, value);
+      }
+
+      res.setHeader(field, value);
+    }
+
+    function insertLinkArray(entries) {
+      entries.forEach(function (entry) {
+        var url = entry[0];
+        var asType = entry[1];
+
+        appendHeader(&#x27;Link&#x27;, &#x27;&#x3c;&#x27; + encodeRFC5987(unescape(url)) + &#x27;&#x3e;; rel=preload; as=&#x27; + asType);
+      });
+    }
+
+    function processBody(body) {
+      var foundEntries = [];
+
+      posthtml().use(posthtmlPreload(options, foundEntries)).process(body, {sync: true});
+
+      return foundEntries;
+    }
+
+    hijackresponse(res, function (err, res) {
+<span class="apidocCodeCommentSpan">      /* istanbul ignore next */
+</span>      // `err` from hijackresponse is currently hardcoded to &#x22;null&#x22;
+      if (err) {
+        res.unhijack();
+        next(err);
+        return;
+      }
+
+      // Only hijack HTML responses
+      if (!/^text\/html(?:;|\s|$)/.test(res.getHeader(&#x27;Content-Type&#x27;))) {
+        res.unhijack();
+        return;
+      }
+
+      var etag = res.getHeader(&#x27;etag&#x27;);
+      var entries;
+
+      // reuse previous parse if the etag already exists in cache
+      if (etag) {
+        entries = cache.get(etag);
+
+        if (entries) {
+          insertLinkArray(entries);
+          res.pipe(res);
+          return;
+        }
+      }
+
+      res.pipe(bl(function (err, data) {
+        if (err) {
+          res.unhijack();
+          next(err);
+          return;
+        }
+
+        entries = processBody(data.toString());
+
+        insertLinkArray(entries);
+        cache.set(etag, entries);
+
+        res.end(data);
+      }));
+    });
+
+    next();
+  };
+}</pre></li>
+    <li>example usage<pre class="apidocCodePre">n/a</pre></li>
+    </ul>
+
+
+
+    <h2>
+        <a href="#apidoc.element.netjet.posthtml_preload" id="apidoc.element.netjet.posthtml_preload">
+        function <span class="apidocSignatureSpan">netjet.</span>posthtml_preload
+        <span class="apidocSignatureSpan">(options, foundEntries)</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">posthtml_preload = function (options, foundEntries) {
+  return function (tree) {
+    var matchers = [];
+
+    if (options.images) {
+      matchers.push({
+        tag: &#x27;img&#x27;,
+        attrs: {
+          src: true
+        }
+      });
+    }
+
+    if (options.scripts) {
+      matchers.push({
+        tag: &#x27;script&#x27;,
+        attrs: {
+          src: true
+        }
+      });
+    }
+
+    if (options.styles) {
+      matchers.push({
+        tag: &#x27;link&#x27;,
+        attrs: {
+          rel: &#x27;stylesheet&#x27;
+        }
+      });
+    }
+
+    if (matchers.length) {
+      tree.match(matchers, function (node) {
+        switch (node.tag) {
+          case &#x27;img&#x27;:
+            foundEntries.push([node.attrs.src, &#x27;image&#x27;]);
+            break;
+          case &#x27;script&#x27;:
+            foundEntries.push([node.attrs.src, &#x27;script&#x27;]);
+            break;
+          case &#x27;link&#x27;:
+            foundEntries.push([node.attrs.href, &#x27;style&#x27;]);
+            break;
+          // no default
+        }
+        return node;
+      });
+    }
+
+    return foundEntries;
+  };
+}</pre></li>
+    <li>example usage<pre class="apidocCodePre">n/a</pre></li>
+    </ul>
+
+
+
+    <h2>
+        <a href="#apidoc.element.netjet.toString" id="apidoc.element.netjet.toString">
+        function <span class="apidocSignatureSpan">netjet.</span>toString
+        <span class="apidocSignatureSpan">()</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">toString = function () {
+    return text;
+}</pre></li>
+    <li>example usage<pre class="apidocCodePre">...
+  res.pipe(bl(function (err, data) {
+    if (err) {
+      res.unhijack();
+      next(err);
+      return;
+    }
+
+    entries = processBody(data.<span class="apidocCodeKeywordSpan">toString</span>());
+
+    insertLinkArray(entries);
+    cache.set(etag, entries);
+
+    res.end(data);
+  }));
+});
+...</pre></li>
+    </ul>
+
+
+</div>
+
+<div class="apidocSectionDiv">
+<h1><a href="#apidoc.module.netjet.posthtml_preload" id="apidoc.module.netjet.posthtml_preload">module netjet.posthtml_preload</a></h1>
+
+
+    <h2>
+        <a href="#apidoc.element.netjet.posthtml_preload.posthtml_preload" id="apidoc.element.netjet.posthtml_preload.posthtml_preload">
+        function <span class="apidocSignatureSpan">netjet.</span>posthtml_preload
+        <span class="apidocSignatureSpan">(options, foundEntries)</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">posthtml_preload = function (options, foundEntries) {
+  return function (tree) {
+    var matchers = [];
+
+    if (options.images) {
+      matchers.push({
+        tag: &#x27;img&#x27;,
+        attrs: {
+          src: true
+        }
+      });
+    }
+
+    if (options.scripts) {
+      matchers.push({
+        tag: &#x27;script&#x27;,
+        attrs: {
+          src: true
+        }
+      });
+    }
+
+    if (options.styles) {
+      matchers.push({
+        tag: &#x27;link&#x27;,
+        attrs: {
+          rel: &#x27;stylesheet&#x27;
+        }
+      });
+    }
+
+    if (matchers.length) {
+      tree.match(matchers, function (node) {
+        switch (node.tag) {
+          case &#x27;img&#x27;:
+            foundEntries.push([node.attrs.src, &#x27;image&#x27;]);
+            break;
+          case &#x27;script&#x27;:
+            foundEntries.push([node.attrs.src, &#x27;script&#x27;]);
+            break;
+          case &#x27;link&#x27;:
+            foundEntries.push([node.attrs.href, &#x27;style&#x27;]);
+            break;
+          // no default
+        }
+        return node;
+      });
+    }
+
+    return foundEntries;
+  };
+}</pre></li>
+    <li>example usage<pre class="apidocCodePre">n/a</pre></li>
+    </ul>
+
+
+</div>
+
+<div class="apidocSectionDiv">
+<h1><a href="#apidoc.module.netjet.toString" id="apidoc.module.netjet.toString">module netjet.toString</a></h1>
+
+
+    <h2>
+        <a href="#apidoc.element.netjet.toString.toString" id="apidoc.element.netjet.toString.toString">
+        function <span class="apidocSignatureSpan">netjet.</span>toString
+        <span class="apidocSignatureSpan">()</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">function toString() { [native code] }</pre></li>
+    <li>example usage<pre class="apidocCodePre">...
+  res.pipe(bl(function (err, data) {
+    if (err) {
+      res.unhijack();
+      next(err);
+      return;
+    }
+
+    entries = processBody(data.<span class="apidocCodeKeywordSpan">toString</span>());
+
+    insertLinkArray(entries);
+    cache.set(etag, entries);
+
+    res.end(data);
+  }));
+});
+...</pre></li>
+    </ul>
+
+
+</div>
+
+<div class="apidocFooterDiv">
+    [ this document was created with
+    <a href="https://github.com/kaizhu256/node-utility2" target="_blank">utility2</a>
+    ]
+</div>
+</div>
